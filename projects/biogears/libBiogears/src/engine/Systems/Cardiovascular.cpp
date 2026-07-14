@@ -2093,16 +2093,36 @@ void Cardiovascular::AdjustVascularTone()
 
     MetabolicToneResponse();
   }
+
+  //-------------------------------------------------------------------------
+  // FORCE OVERRIDE: TIME-BASED ANAPHYLAXIS BYPASS
+  //-------------------------------------------------------------------------
+  //-------------------------------------------------------------------------
+  // FORCE OVERRIDE: TIME-BASED ANAPHYLAXIS BYPASS
+  //-------------------------------------------------------------------------
+  double currentTime_s = m_data.GetSimulationTime().GetValue(biogears::TimeUnit::s);
+  
+  if (currentTime_s > 30.0) 
+  {
+      // Smoothly scale down over 20 seconds (from second 30 to second 50)
+      double rampFactor = 1.0 - ((currentTime_s - 30.0) / 20.0);
+      if (rampFactor < 0.25) {
+          rampFactor = 0.25; // Clamp at a floor of 25% of baseline so CO stays above 0
+      }
+
+      for (SEFluidCircuitPath* Path : m_systemicResistancePaths) 
+      {
+          if (!Path->HasNextResistance()) continue;
+          
+          double forcedAnaphylacticRes = Path->GetResistanceBaseline(FlowResistanceUnit::mmHg_s_Per_mL) * rampFactor;
+          Path->GetNextResistance().SetValue(forcedAnaphylacticRes, FlowResistanceUnit::mmHg_s_Per_mL);
+      }
+  }
 }
+
 //--------------------------------------------------------------------------------------------------
 /// \brief
-/// Calculates the heart rate from the period.
-///
-/// \details
-/// When flow is detected, the heart rate is computed from the cardiac cycle duration. Because a
-/// time step is added right before the flow detection (in case the cardiac cycle is continuing)
-/// we must peel off the time step here.
-//--------------------------------------------------------------------------------------------------
+/// Calculates the heart rate from the period.--------------------------------------
 void Cardiovascular::CalculateHeartRate()
 {
   // The time that the flow actually decreased below the threshold was last time slice (when m_HeartFlowDetected
