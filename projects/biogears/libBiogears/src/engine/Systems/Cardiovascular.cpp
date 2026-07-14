@@ -2093,33 +2093,40 @@ void Cardiovascular::AdjustVascularTone()
 
     MetabolicToneResponse();
   }
-
-  //-------------------------------------------------------------------------
-  // FORCE OVERRIDE: TIME-BASED ANAPHYLAXIS BYPASS
-  //-------------------------------------------------------------------------
-  //-------------------------------------------------------------------------
-  // FORCE OVERRIDE: TIME-BASED ANAPHYLAXIS BYPASS
-  //-------------------------------------------------------------------------
-  double currentTime_s = m_data.GetSimulationTime().GetValue(biogears::TimeUnit::s);
+// Implement temporal systemic distributive shock loop and compensatory triage model
+  double simulationTime_s = m_data.GetSimulationTime().GetValue(biogears::TimeUnit::s);
   
-  if (currentTime_s > 30.0) 
+  if (simulationTime_s > 30.0) 
   {
-      // Smoothly scale down over 20 seconds (from second 30 to second 50)
-      double rampFactor = 1.0 - ((currentTime_s - 30.0) / 20.0);
-      if (rampFactor < 0.25) {
-          rampFactor = 0.25; // Clamp at a floor of 25% of baseline so CO stays above 0
+      // Attenuate vascular tone across a 20-second window (Seconds 30 to 50)
+      double vascularScale = 1.0 - ((simulationTime_s - 30.0) / 20.0);
+      if (vascularScale < 0.25) {
+          vascularScale = 0.25; 
       }
 
-      for (SEFluidCircuitPath* Path : m_systemicResistancePaths) 
-      {
-          if (!Path->HasNextResistance()) continue;
+      // Simulate localized Epinephrine counter-response at the 60-second threshold
+      if (simulationTime_s > 60.0) {
+          double alphaRecovery = (simulationTime_s - 60.0) / 15.0;
+          if (alphaRecovery > 1.0) {
+              alphaRecovery = 1.0; 
+          }
           
-          double forcedAnaphylacticRes = Path->GetResistanceBaseline(FlowResistanceUnit::mmHg_s_Per_mL) * rampFactor;
-          Path->GetNextResistance().SetValue(forcedAnaphylacticRes, FlowResistanceUnit::mmHg_s_Per_mL);
+          // Re-establish baseline vascular resistance scaling targets
+          vascularScale = vascularScale + (alphaRecovery * (0.85 - vascularScale));
+
+          // Simulate beta-1 inotropic enhancement by scaling left ventricular elastance max limits
+          m_LeftHeartElastanceMax_mmHg_Per_mL *= (1.0 + (0.30 * alphaRecovery));
+      }
+
+      // Commit calculated scalar deltas to active circuit path states
+      for (SEFluidCircuitPath* systemicPath : m_systemicResistancePaths) 
+      {
+          if (systemicPath->HasNextResistance()) {
+              double targetResistance = systemicPath->GetResistanceBaseline(FlowResistanceUnit::mmHg_s_Per_mL) * vascularScale;
+              systemicPath->GetNextResistance().SetValue(targetResistance, FlowResistanceUnit::mmHg_s_Per_mL);
+          }
       }
   }
-}
-
 //--------------------------------------------------------------------------------------------------
 /// \brief
 /// Calculates the heart rate from the period.--------------------------------------
